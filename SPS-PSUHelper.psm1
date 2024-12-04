@@ -28,7 +28,7 @@ Class PSUPS1File {
         }
     }
 }
-Function New-PSUBrandingContent {
+Function New-SPSUBrandingContent {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory,Position = 1)]
@@ -46,7 +46,7 @@ Function New-PSUBrandingContent {
         # Build the splat when the node is not empty
         $BrandingFileName = 'Branding.ps1'
         # Get the Properties
-        $BrandingProperties = $BrandingNode | Get-Member -MemberType Property | Where-Object Name -ne '#comment'  | Select-Object -ExpandProperty 'Name'
+        $BrandingProperties = $BrandingNode | Get-Member -MemberType Property | Select-Object -ExpandProperty 'Name'
         ForEach ($Property in $BrandingProperties) {
             $Value = $BrandingNode.$Property
             $String = "    $($Property) = '$($Value)'"
@@ -67,7 +67,7 @@ New-PSUBranding @BrandingSplat
         Return $BrandingContent
     }
 }
-Function New-PSUPublishedFoldersContent {
+Function New-SPSUPublishedFoldersContent {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory,Position = 1)]
@@ -119,7 +119,7 @@ $ThisFolderContent
         Return $PublishedFoldersContent
     }
 }
-Function Publish-PSUServer {
+Function Publish-SPSUServer {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory,Position = 1)]
