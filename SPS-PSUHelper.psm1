@@ -28,6 +28,97 @@ Class PSUPS1File {
         }
     }
 }
+Function New-PSUBrandingContent {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory,Position = 1)]
+        [String] ${Path}
+    )
+    Try {
+        [XML] $PSUServerConfiguration = Get-Content -Path $Path -ErrorAction Stop
+    }Catch {
+        Throw "Unable to get the content of the file $($Path)"
+    }
+    $BrandingNode = $PSUServerConfiguration.SelectSingleNode('//Branding')
+    if ($BrandingNode) {
+        # Build the splat
+        [System.Collections.Generic.List[String]] $BrandingPropertiesStrings = @() 
+        # Build the splat when the node is not empty
+        $BrandingFileName = 'Branding.ps1'
+        # Get the Properties
+        $BrandingProperties = $BrandingNode | Get-Member -MemberType Property | Where-Object Name -ne '#comment'  | Select-Object -ExpandProperty 'Name'
+        ForEach ($Property in $BrandingProperties) {
+            $Value = $BrandingNode.$Property
+            $String = "    $($Property) = '$($Value)'"
+            $BrandingPropertiesStrings.Add($String)
+        }
+        $Message = "'Loading $($BrandingFileName)'"
+        $BrandingContent = @"
+Try{
+    Write-PSULog -Level 'Debug' -Message $Message -Feature 'Scripts' -Resource 'Initialisation'
+}Catch{
+    Write-Host $Message
+}            
+`$BrandingSplat = @{
+$($BrandingPropertiesStrings -join "`n")
+}
+New-PSUBranding @BrandingSplat
+"@
+        Return $BrandingContent
+    }
+}
+Function New-PSUPublishedFoldersContent {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory,Position = 1)]
+        [String] ${Path}
+    )
+    Try {
+        [XML] $PSUServerConfiguration = Get-Content -Path $Path -ErrorAction Stop
+    }Catch {
+        Throw "Unable to get the content of the file $($Path)"
+    }
+    $PublishedFoldersNode = $PSUServerConfiguration.SelectSingleNode('//PublishedFolders')
+    if ($PublishedFoldersNode) {
+        $PublishedFoldersFileName = 'PublishedFolders.ps1'
+        $Message = "'Loading $($PublishedFoldersFileName)'"
+        $PublishedFoldersContent = @"
+Try{
+    Write-PSULog -Level 'Debug' -Message $Message -Feature 'Scripts' -Resource 'Initialisation'
+}Catch{
+    Write-Host $Message
+}
+"@
+        $FolderCount = 0
+        ForEach ($Folder in $PublishedFoldersNode | Select-Object -ExpandProperty 'Folder') {
+            $FolderCount++
+            [System.Collections.Generic.List[String]] $ThisFolderSplatList = @()
+            $FolderProperties = $Folder | Get-Member -MemberType Property | Select-Object -ExpandProperty 'Name'
+            ForEach ($Property in $FolderProperties) {
+                $Value = $Folder.$Property
+                if ($Value -match 'true|false') {
+                    # the value is a boolean
+                    $Value = [Boolean]::Parse($Value)
+                    $String = "    $($Property) = `$$($Value)"
+                }Else{
+                    $String = "    $($Property) = '$($Value)'"
+                }
+                $ThisFolderSplatList.Add($String)
+            }
+            $ThisFolderContent = @"
+`$FolderSplat$FolderCount = @{
+$($ThisFolderSplatList -join "`n")
+}
+New-PSUPublishedFolder @FolderSplat$FolderCount
+"@
+            $PublishedFoldersContent = @"
+$PublishedFoldersContent
+$ThisFolderContent
+"@
+        }
+        Return $PublishedFoldersContent
+    }
+}
 Function Publish-PSUServer {
     [CmdletBinding()]
     param (
@@ -87,39 +178,12 @@ Function Publish-PSUServer {
     }
     PROCESS {
         Write-Verbose "Process $($PSCmdlet.MyInvocation.MyCommand)"
-        Try {
-            [XML] $PSUServerConfiguration = Get-Content -Path $Path -ErrorAction Stop
-        }Catch {
-            Throw "Unable to get the content of the file $($Path)"
-        }
         # Process the file
         #region Branding
         # Process the branding
-        $BrandingNode = $PSUServerConfiguration.SelectSingleNode('//Branding')
-        if ($BrandingNode) {
-            # Build the splat
-            [System.Collections.Generic.List[String]] $BrandingPropertiesStrings = @() 
-            # Build the splat when the node is not empty
-            $BrandingFileName = 'Branding.ps1'
-            # Get the Properties
-            $BrandingProperties = $BrandingNode | Get-Member -MemberType Property | Where-Object Name -ne '#comment'  | Select-Object -ExpandProperty 'Name'
-            ForEach ($Property in $BrandingProperties) {
-                $Value = $BrandingNode.$Property
-                $String = "$($Property) = '$($Value)'"
-                $BrandingPropertiesStrings.Add($String)
-            }
-            $Message = "'Loading $($BrandingFileName)'"
-            $BrandingContent = @"
-Try{
-    Write-PSULog -Level 'Debug' -Message $Message -Feature 'Scripts' -Resource 'Initialisation'
-}Catch{
-    Write-Host $Message
-}            
-`$BrandingSplat = @{
-$($BrandingPropertiesStrings | ForEach-Object {"`t$($_)`n"})
-}
-New-PSUBranding @BrandingSplat
-"@
+        $BrandingContent = New-PSUBrandingContent -Path $Path
+        $BrandingFileName = 'Branding.ps1'
+        if ($BrandingContent) {
             $CurrentContent = $CurrentPSUServer | Select-Object -ExpandProperty 'Branding'  -ErrorAction Ignore | Select-Object -ExpandProperty 'Content' -ErrorAction Ignore
             if ((-not $CurrentContent) -or ($BrandingContent.Trim() -ne $CurrentContent.trim())) {
                 # The Branding is different rewrite the file
@@ -129,48 +193,17 @@ New-PSUBranding @BrandingSplat
             }Else{
                 Write-Verbose "The file $($BrandingFileName) do not need to be rewritten"
             }
+        }Else{
+            Write-Verbose "The Branding content is empty remove the file if exist"
+            if ($CurrentPSUServer.Branding.Exists) {
+                Remove-Item -Path "$($RepositoryPath)\.universal\$($BrandingFileName)" -Force
+            }
         }
-        #endregion Branding
         #region Published Folders
         # Process the Published Folders
-        $PublishedFoldersNode = $PSUServerConfiguration.SelectSingleNode('//PublishedFolders')
-        if ($PublishedFoldersNode) {
-            $PublishedFoldersFileName = 'PublishedFolders.ps1'
-            $Message = "'Loading $($PublishedFoldersFileName)'"
-            $PublishedFoldersContent = @"
-Try{
-    Write-PSULog -Level 'Debug' -Message $Message -Feature 'Scripts' -Resource 'Initialisation'
-}Catch{
-    Write-Host $Message
-}
-"@
-            $FolderCount = 0
-            ForEach ($Folder in $PublishedFoldersNode | Select-Object -ExpandProperty 'Folder') {
-                $FolderCount++
-                [System.Collections.Generic.List[String]] $ThisFolderSplatList = @()
-                $FolderProperties = $Folder | Get-Member -MemberType Property | Select-Object -ExpandProperty 'Name'
-                ForEach ($Property in $FolderProperties) {
-                    $Value = $Folder.$Property
-                    if ($Value -match 'true|false') {
-                        # the value is a boolean
-                        $Value = [Boolean]::Parse($Value)
-                        $String = "$($Property) = `$$($Value)"
-                    }Else{
-                        $String = "$($Property) = '$($Value)'"
-                    }
-                    $ThisFolderSplatList.Add($String)
-                }
-                $ThisFolderContent = @"
-`$FolderSplat$FolderCount = @{
-$($ThisFolderSplatList | ForEach-Object {"`t$($_)`n"})
-}
-New-PSUPublishedFolder @FolderSplat$FolderCount
-"@
-                $PublishedFoldersContent = @"
-$PublishedFoldersContent
-$ThisFolderContent
-"@
-            }
+        $PublishedFoldersContent = New-PSUPublishedFoldersContent -Path $Path
+        $PublishedFoldersFileName = 'PublishedFolders.ps1'
+        if ($PublishedFoldersContent) {
             $CurrentContent = $CurrentPSUServer | Select-Object -ExpandProperty 'PublishedFolders' -ErrorAction Ignore | Select-Object -ExpandProperty 'Content' -ErrorAction Ignore
             if ((-not $CurrentContent) -or ($PublishedFoldersContent.Trim() -ne $CurrentContent.trim())) {
                 # The PublishedFolders is different rewrite the file
@@ -179,6 +212,9 @@ $ThisFolderContent
                 $PublishedFoldersContent | Set-Content -Path $PublishedFoldersPath -Force
             }Else{
                 Write-Verbose "The file $($PublishedFoldersFileName) do not need to be rewritten"
+                if ($CurrentPSUServer.PublishedFolders.Exists) {
+                    Remove-Item -Path "$($RepositoryPath)\.universal\$($PublishedFoldersFileName)" -Force
+                }
             }
         }
         #endregion Published Folders
