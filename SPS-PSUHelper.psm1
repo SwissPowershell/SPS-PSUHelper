@@ -199,6 +199,7 @@ Function Publish-PSUServer {
                 Remove-Item -Path "$($RepositoryPath)\.universal\$($BrandingFileName)" -Force
             }
         }
+        #endregion Branding
         #region Published Folders
         # Process the Published Folders
         $PublishedFoldersContent = New-PSUPublishedFoldersContent -Path $Path
@@ -210,14 +211,17 @@ Function Publish-PSUServer {
                 Write-Verbose "Rewriting the file $($PublishedFoldersFileName)"
                 $PublishedFoldersPath = "$($RepositoryPath)\.universal\$($PublishedFoldersFileName)"
                 $PublishedFoldersContent | Set-Content -Path $PublishedFoldersPath -Force
-            }Else{
-                Write-Verbose "The file $($PublishedFoldersFileName) do not need to be rewritten"
-                if ($CurrentPSUServer.PublishedFolders.Exists) {
-                    Remove-Item -Path "$($RepositoryPath)\.universal\$($PublishedFoldersFileName)" -Force
-                }
+            }
+        }Else{
+            Write-Verbose "The file $($PublishedFoldersFileName) do not need to be rewritten"
+            if ($CurrentPSUServer.PublishedFolders.Exists) {
+                Remove-Item -Path "$($RepositoryPath)\.universal\$($PublishedFoldersFileName)" -Force
             }
         }
         #endregion Published Folders
+
+        # Proceed to controls
+        # TO DO
     }
     END {
         Write-Verbose "End $($PSCmdlet.MyInvocation.MyCommand)"
