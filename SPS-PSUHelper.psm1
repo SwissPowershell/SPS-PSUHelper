@@ -1,14 +1,3 @@
-Class PSUServer {
-    [String] ${RepositoryPath}
-    [PSUPS1File] ${Branding}
-    [PSUPS1File] ${PublishedFolders}
-    PSUServer() {}
-    PSUServer([String] ${RepositoryPath}) {
-        $this.RepositoryPath = $RepositoryPath
-        $this.Branding = [PSUPS1File]::new("$($RepositoryPath)\.universal\Branding.ps1")
-        $this.PublishedFolders = [PSUPS1File]::new("$($RepositoryPath)\.universal\PublishedFolders.ps1")
-    }
-}
 Class PSUPS1File {
     [String] ${Path}
     [String] ${Name}
@@ -28,6 +17,47 @@ Class PSUPS1File {
         }
     }
 }
+
+Class PSUServer {
+    [String] ${RepositoryPath}
+    [PSUPS1File] ${Branding}
+    [PSUPS1File] ${PublishedFolders}
+    PSUServer() {}
+    PSUServer([String] ${RepositoryPath}) {
+        $this.RepositoryPath = $RepositoryPath
+        $this.Branding = [PSUPS1File]::new("$($RepositoryPath)\.universal\Branding.ps1")
+        $this.PublishedFolders = [PSUPS1File]::new("$($RepositoryPath)\.universal\PublishedFolders.ps1")
+    }
+}
+
+
+Class PSUHelper {
+    static [String] GetLogLine([String] ${Message}) {
+        Return "Try{ Write-PSULog -Level 'Debug' -Message '$Message' -Feature 'Scripts' -Resource 'Initialisation' }Catch{ Write-Host '$Message' }"
+    }
+    static [String] GetSplatLines ([System.Xml.XmlElement] $Element, [String] $SplatName, [String] $Command) {
+        [System.Collections.Generic.List[String]] $SplatLines = @()
+        $Properties = $Element | Get-Member -MemberType Property | Select-Object -ExpandProperty 'Name'
+        ForEach ($Property in $Properties) {
+            $Value = $Element.$Property
+            if ($Value -match 'true|false') {
+                # the value is a boolean
+                $Value = [Boolean]::Parse($Value)
+                $String = "    $($Property) = `$$($Value)"
+            }Else{
+                $String = "    $($Property) = '$($Value)'"
+            }
+            $SplatLines.Add($String)
+        }
+        $SplatContent = @"
+`$$SplatName = @{
+$($SplatLines -join "`n")
+}
+$Command @$SplatName
+"@
+        Return $SplatContent
+    }
+}
 Function New-SPSUBrandingContent {
     [CmdletBinding()]
     param (
@@ -39,32 +69,22 @@ Function New-SPSUBrandingContent {
     }Catch {
         Throw "Unable to get the content of the file $($Path)"
     }
-    $BrandingNode = $PSUServerConfiguration.SelectSingleNode('//Branding')
-    if ($BrandingNode) {
-        # Build the splat
-        [System.Collections.Generic.List[String]] $BrandingPropertiesStrings = @() 
+    $Node = $PSUServerConfiguration.SelectSingleNode('//Branding')
+    if ($Node) {
         # Build the splat when the node is not empty
-        $BrandingFileName = 'Branding.ps1'
+        $FileName = 'Branding.ps1'
         # Get the Properties
-        $BrandingProperties = $BrandingNode | Get-Member -MemberType Property | Select-Object -ExpandProperty 'Name'
-        ForEach ($Property in $BrandingProperties) {
-            $Value = $BrandingNode.$Property
-            $String = "    $($Property) = '$($Value)'"
-            $BrandingPropertiesStrings.Add($String)
-        }
-        $Message = "'Loading $($BrandingFileName)'"
-        $BrandingContent = @"
-Try{
-    Write-PSULog -Level 'Debug' -Message $Message -Feature 'Scripts' -Resource 'Initialisation'
-}Catch{
-    Write-Host $Message
-}            
-`$BrandingSplat = @{
-$($BrandingPropertiesStrings -join "`n")
-}
-New-PSUBranding @BrandingSplat
+        $Message = "Loading $($FileName)"
+        $Command = 'New-PSUBranding'
+        $LogPart = [PSUHelper]::GetLogLine($Message)
+        # Generate the splat and command
+        $SplatName = 'BrandingSplat'
+        $ContentPart = [PSUHelper]::GetSplatLines($Node, $SplatName, $Command)
+        $Content = @"
+$($LogPart)
+$($ContentPart)
 "@
-        Return $BrandingContent
+        Return $Content
     }
 }
 Function New-SPSUPublishedFoldersContent {
@@ -78,45 +98,27 @@ Function New-SPSUPublishedFoldersContent {
     }Catch {
         Throw "Unable to get the content of the file $($Path)"
     }
-    $PublishedFoldersNode = $PSUServerConfiguration.SelectSingleNode('//PublishedFolders')
-    if ($PublishedFoldersNode) {
-        $PublishedFoldersFileName = 'PublishedFolders.ps1'
-        $Message = "'Loading $($PublishedFoldersFileName)'"
-        $PublishedFoldersContent = @"
-Try{
-    Write-PSULog -Level 'Debug' -Message $Message -Feature 'Scripts' -Resource 'Initialisation'
-}Catch{
-    Write-Host $Message
-}
-"@
+    $Node = $PSUServerConfiguration.SelectSingleNode('//PublishedFolders')
+    if ($Node) {
+        # Build the splat when the node is not empty
+        $FileName = 'PublishedFolders.ps1'
+        # Get the Properties
+        $Message = "Loading $($FileName)"
+        $Command = 'New-PSUPublishedFolder'
+        $LogPart = [PSUHelper]::GetLogLine($Message)
+        [System.Collections.Generic.List[String]] $AllContent = @()
         $FolderCount = 0
-        ForEach ($Folder in $PublishedFoldersNode | Select-Object -ExpandProperty 'Folder') {
+        ForEach ($Folder in $Node.SelectNodes('//Folder')) {
+            $SplatName = "FolderSplat$($FolderCount)"
+            $ContentPart = [PSUHelper]::GetSplatLines($Folder, $SplatName, $Command)
+            $AllContent.Add($ContentPart)
             $FolderCount++
-            [System.Collections.Generic.List[String]] $ThisFolderSplatList = @()
-            $FolderProperties = $Folder | Get-Member -MemberType Property | Select-Object -ExpandProperty 'Name'
-            ForEach ($Property in $FolderProperties) {
-                $Value = $Folder.$Property
-                if ($Value -match 'true|false') {
-                    # the value is a boolean
-                    $Value = [Boolean]::Parse($Value)
-                    $String = "    $($Property) = `$$($Value)"
-                }Else{
-                    $String = "    $($Property) = '$($Value)'"
-                }
-                $ThisFolderSplatList.Add($String)
-            }
-            $ThisFolderContent = @"
-`$FolderSplat$FolderCount = @{
-$($ThisFolderSplatList -join "`n")
-}
-New-PSUPublishedFolder @FolderSplat$FolderCount
-"@
-            $PublishedFoldersContent = @"
-$PublishedFoldersContent
-$ThisFolderContent
-"@
         }
-        Return $PublishedFoldersContent
+        $Content = @"
+$($LogPart)
+$($AllContent -join "`n`n")
+"@
+        Return $Content
     }
 }
 Function Publish-SPSUServer {
@@ -181,7 +183,7 @@ Function Publish-SPSUServer {
         # Process the file
         #region Branding
         # Process the branding
-        $BrandingContent = New-PSUBrandingContent -Path $Path
+        $BrandingContent = New-SPSUBrandingContent -Path $Path
         $BrandingFileName = 'Branding.ps1'
         if ($BrandingContent) {
             $CurrentContent = $CurrentPSUServer | Select-Object -ExpandProperty 'Branding'  -ErrorAction Ignore | Select-Object -ExpandProperty 'Content' -ErrorAction Ignore
@@ -202,7 +204,7 @@ Function Publish-SPSUServer {
         #endregion Branding
         #region Published Folders
         # Process the Published Folders
-        $PublishedFoldersContent = New-PSUPublishedFoldersContent -Path $Path
+        $PublishedFoldersContent = New-SPSUPublishedFoldersContent -Path $Path
         $PublishedFoldersFileName = 'PublishedFolders.ps1'
         if ($PublishedFoldersContent) {
             $CurrentContent = $CurrentPSUServer | Select-Object -ExpandProperty 'PublishedFolders' -ErrorAction Ignore | Select-Object -ExpandProperty 'Content' -ErrorAction Ignore

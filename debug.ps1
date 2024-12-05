@@ -14,7 +14,7 @@ Write-Host '------------------- Starting script -------------------' -Foreground
 
 # $PSURoleSplat = Get-PSURoleSplatFromFile -Path 'C:\ProgramData\PowerShellUniversal\CustomAssets\Role.xml'
 # Get-PSURoleFromFile -Path 'C:\ProgramData\PowerShellUniversal\CustomAssets\Role.json'
-$Result = Publish-PSUServer -path 'C:\ProgramData\UniversalAutomation\Repository\DynamicServer\Main.xml' -Verbose -ErrorAction Stop 
+$Result = Publish-SPSUServer -path 'C:\ProgramData\UniversalAutomation\Repository\DynamicServer\Main.xml' -Verbose -ErrorAction Stop 
 $Result
 ##################################
 # End of the tests show metrics #
