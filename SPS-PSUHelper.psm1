@@ -32,8 +32,8 @@ Class PSUServer {
 
 
 Class PSUHelper {
-    static [String] GetLogLine([String] ${Message}) {
-        Return "Try{ Write-PSULog -Level 'Debug' -Message '$Message' -Feature 'Scripts' -Resource 'Initialisation' }Catch{ Write-Host '$Message' }"
+    static [String] LogLine([String] ${Message}) {
+        Return "Try{ Write-PSULog -Level 'Information' -Message '$Message' -Feature 'Script' -Resource 'Initialisation' }Catch{ Write-Host '$Message' }"
     }
     static [String] GetSplatLines ([System.Xml.XmlElement] $Element, [String] $SplatName, [String] $Command) {
         [System.Collections.Generic.List[String]] $SplatLines = @()
@@ -76,7 +76,7 @@ Function New-SPSUBrandingContent {
         # Get the Properties
         $Message = "Loading $($FileName)"
         $Command = 'New-PSUBranding'
-        $LogPart = [PSUHelper]::GetLogLine($Message)
+        $LogPart = [PSUHelper]::LogLine($Message)
         # Generate the splat and command
         $SplatName = 'BrandingSplat'
         $ContentPart = [PSUHelper]::GetSplatLines($Node, $SplatName, $Command)
@@ -105,7 +105,7 @@ Function New-SPSUPublishedFoldersContent {
         # Get the Properties
         $Message = "Loading $($FileName)"
         $Command = 'New-PSUPublishedFolder'
-        $LogPart = [PSUHelper]::GetLogLine($Message)
+        $LogPart = [PSUHelper]::LogLine($Message)
         [System.Collections.Generic.List[String]] $AllContent = @()
         $FolderCount = 0
         ForEach ($Folder in $Node.SelectNodes('//Folder')) {
